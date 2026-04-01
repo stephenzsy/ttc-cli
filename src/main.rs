@@ -1,5 +1,6 @@
 use chrono::{DateTime, Local};
 use clap::Parser;
+use csv::StringRecord;
 use prost::Message;
 use reqwest::{self, Url};
 use std::{error::Error, io::Read};
@@ -13,10 +14,10 @@ const GTFS_DATA_BASE_URL: &str = "https://ckan0.cf.opendata.inter.prod-toronto.c
 
 #[derive(Parser, Debug)]
 struct Filter {
-    #[arg(short, long, group = "filter")]
+    #[arg(short, long)]
     route: String,
 
-    #[arg(short, long, group = "filter")]
+    #[arg(short, long)]
     stop: String,
 }
 
@@ -26,8 +27,16 @@ struct Args {
     #[command(flatten)]
     filter: Option<Filter>,
 
-    #[arg(long, default_value_t = false, conflicts_with = "filter")]
+    #[arg(
+        long,
+        default_value_t = false,
+        conflicts_with = "route",
+        conflicts_with = "stop"
+    )]
     update_stops: bool,
+
+    #[arg(long, default_value_t = false)]
+    debug: bool,
 }
 
 async fn update_stops() -> Result<(), Box<dyn Error>> {
@@ -53,7 +62,7 @@ async fn update_stops() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn lookup_stop_code(stop_code: &String) -> Result<Option<String>, Box<dyn Error>> {
+fn lookup_stop_code(stop_code: &String) -> Result<Option<StringRecord>, Box<dyn Error>> {
     let mut rdr = csv::Reader::from_path("./stops.txt")?;
     for result in rdr.records() {
         // The iterator yields Result<StringRecord, Error>, so we check the
@@ -61,7 +70,7 @@ fn lookup_stop_code(stop_code: &String) -> Result<Option<String>, Box<dyn Error>
         let record = result?;
 
         if record.get(1).unwrap() == stop_code {
-            return Ok(Some(String::from(record.get(0).unwrap())));
+            return Ok(Some(record));
         }
     }
     Ok(None)
@@ -89,7 +98,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         println!("Stop code {} not found", &filter.stop);
         return Ok(());
     }
-    let arg_stop_id = stop_id_result.unwrap();
+    let stop_record = stop_id_result.unwrap();
+    let arg_stop_id = stop_record.get(0).unwrap();
+    let arg_stop_name = stop_record.get(2).unwrap();
+    println!("Stop Name: {}", arg_stop_name);
 
     let feed_raw = reqwest::get(URL).await?.bytes().await?;
     // pull feed
@@ -132,11 +144,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
             None
         })
         .collect::<Vec<_>>();
+    if args.debug {
+        println!("Filtered Trip Updates: {:#?}", filtered);
+    }
     for trip_update in filtered {
         let vehicle_id = trip_update.vehicle.unwrap().id.unwrap();
         println!("------------------------------");
         println!("Vehicle: {}", vehicle_id);
-
         for stop_time_update in trip_update.stop_time_update {
             if let Some(arrival) = stop_time_update.arrival
                 && let Some(time) = arrival.time
