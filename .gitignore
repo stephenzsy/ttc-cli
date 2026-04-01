@@ -1,0 +1,4 @@
+/target
+/protoc-34.1-win64
+stops.txt
+*.exe
