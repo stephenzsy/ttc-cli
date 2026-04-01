@@ -1,22 +1,56 @@
 use chrono::{DateTime, Local};
 use clap::Parser;
 use prost::Message;
-use reqwest;
-use std::error::Error;
+use reqwest::{self, Url};
+use std::{error::Error, io::Read};
 
 pub mod transit_realtime {
     include!("protos/transit_realtime.rs");
 }
 
 const URL: &str = "https://gtfsrt.ttc.ca/trips/update?format=binary";
+const GTFS_DATA_BASE_URL: &str = "https://ckan0.cf.opendata.inter.prod-toronto.ca";
 
-#[derive(clap::Parser, Debug)]
-struct Args {
-    #[arg(short, long)]
+#[derive(Parser, Debug)]
+struct Filter {
+    #[arg(short, long, group = "filter")]
     route: String,
 
-    #[arg(short, long)]
+    #[arg(short, long, group = "filter")]
     stop: String,
+}
+
+#[derive(clap::Parser, Debug)]
+#[command(version)]
+struct Args {
+    #[command(flatten)]
+    filter: Option<Filter>,
+
+    #[arg(long, default_value_t = false, conflicts_with = "filter")]
+    update_stops: bool,
+}
+
+async fn update_stops() -> Result<(), Box<dyn Error>> {
+    let mut metadata_url =
+        Url::parse(&format!("{}/api/3/action/package_show", GTFS_DATA_BASE_URL))?;
+    metadata_url
+        .query_pairs_mut()
+        .append_pair("id", "merged-gtfs-ttc-routes-and-schedules");
+    let metadata = reqwest::get(metadata_url)
+        .await?
+        .json::<serde_json::Value>()
+        .await?;
+    println!("Downloading GFTS archive");
+    let archive_bytes = reqwest::get(metadata["result"]["resources"][0]["url"].as_str().unwrap())
+        .await?
+        .bytes()
+        .await?;
+    let mut buf: Vec<u8> = Vec::new();
+    zip::ZipArchive::new(std::io::Cursor::new(archive_bytes))?
+        .by_name("stops.txt")?
+        .read_to_end(&mut buf)?;
+    std::fs::write("./stops.txt", buf)?;
+    Ok(())
 }
 
 fn lookup_stop_code(stop_code: &String) -> Result<Option<String>, Box<dyn Error>> {
@@ -40,9 +74,19 @@ fn timestamp_to_local(timestamp: i64) -> Option<DateTime<Local>> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
-    let stop_id_result = lookup_stop_code(&args.stop)?;
+
+    if args.update_stops {
+        update_stops().await?;
+        return Ok(());
+    }
+
+    let filter = args
+        .filter
+        .ok_or("Filter is required when not updating stops")?;
+
+    let stop_id_result = lookup_stop_code(&filter.stop)?;
     if stop_id_result.is_none() {
-        println!("Stop code {} not found", args.stop);
+        println!("Stop code {} not found", &filter.stop);
         return Ok(());
     }
     let arg_stop_id = stop_id_result.unwrap();
@@ -64,7 +108,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             if !entity.is_deleted()
                 && let Some(trip_update) = &entity.trip_update
                 && let Some(route_id) = &trip_update.trip.route_id
-                && route_id == &args.route
+                && route_id == &filter.route
             {
                 let filtered_stop_time_updates = trip_update
                     .stop_time_update
