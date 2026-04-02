@@ -109,13 +109,8 @@ impl TTCRealTime {
 fn load_stops(
     stops: &mut HashMap<String, StopInfo>,
     csv_path: String,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut rdr = csv::Reader::from_path(csv_path).map_err(|e| {
-        napi::Error::new(
-            napi::Status::GenericFailure,
-            format!("Failed to open CSV file: {}", e),
-        )
-    })?;
+) -> Result<(), Box<dyn Error>> {
+    let mut rdr = csv::Reader::from_path(csv_path)?;
     for result in rdr.records() {
         // The iterator yields Result<StringRecord, Error>, so we check the
         // error here.
@@ -123,7 +118,7 @@ fn load_stops(
         let stop = StopInfo {
             id: record.get(0).unwrap_or_default().to_string(),
             name: record.get(2).unwrap_or_default().to_string(),
-            code: record.get(1).unwrap().to_string(),
+            code: record.get(1).unwrap_or_default().to_string(),
         };
         stops.insert(stop.code.clone(), stop);
     }
