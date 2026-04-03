@@ -16,39 +16,58 @@ pub struct StopInfo {
 pub struct Config {
     pub feed_url: String,
     pub stops_csv_path: String,
+    pub stop_times_csv_path: String,
+}
+
+#[derive(Debug)]
+pub struct StopTimeInfo {
+    pub trip_id: String,
+    pub stop_id: String,
+    pub departure_time: String,
+    pub arrival_time: String,
 }
 
 pub struct TTCRealTime {
     stops: HashMap<String, StopInfo>,
+    stop_times: HashMap<String, HashMap<String, StopTimeInfo>>,
     feed_url: String,
+    //    show_scheduled: bool,
 }
 
-pub struct Trip {
+pub struct TripAtStop {
+    pub trip_id: Option<String>,
     pub vehicle_id: Option<String>,
-    pub arrival_time: Option<i64>,
+    pub arrival_times: Vec<Option<i64>>,
 }
 
 pub struct NextBusResult {
     pub timestamp: Option<u64>,
     pub route_id: String,
     pub stop_name: String,
-    pub trips: Vec<Trip>,
+    pub trips: Vec<TripAtStop>,
 }
 
 const DEFAULT_FEED_URL: &str = "https://gtfsrt.ttc.ca/trips/update?format=binary";
 const DEFAULT_STOPS_CSV_PATH: &str = "./stops.txt";
+const DEFAULT_STOP_TIMES_CSV_PATH: &str = "./stop_times.txt";
 
 impl TTCRealTime {
-    pub fn new(config: Option<Config>) -> Result<Self, Box<dyn Error>> {
+    pub fn new(config: Option<Config>, show_scheduled: bool) -> Result<Self, Box<dyn Error>> {
         let config = config.unwrap_or_else(|| Config {
             feed_url: DEFAULT_FEED_URL.to_string(),
             stops_csv_path: DEFAULT_STOPS_CSV_PATH.to_string(),
+            stop_times_csv_path: DEFAULT_STOP_TIMES_CSV_PATH.to_string(),
         });
         let mut s = Self {
             stops: HashMap::new(),
+            stop_times: HashMap::new(),
             feed_url: config.feed_url,
+            // show_scheduled,
         };
         load_stops(&mut s.stops, config.stops_csv_path)?;
+        if show_scheduled {
+            load_stop_times(&mut s.stop_times, config.stop_times_csv_path)?;
+        }
         Ok(s)
     }
 
@@ -71,24 +90,23 @@ impl TTCRealTime {
                         && let Some(route_id) = &trip_update.trip.route_id
                         && route_id == &filter_route_id
                     {
-                        let filtered_stoptime_update = trip_update
+                        let trip_id = &trip_update.trip.trip_id;
+                        let arrival_times = trip_update
                             .stop_time_update
                             .iter()
                             .filter_map(|stop_time_update| {
-                                if let Some(stop_id) = &stop_time_update.stop_id {
-                                    if *stop_id == stop.id {
-                                        return Some(stop_time_update);
-                                    }
+                                if let Some(stop_id) = &stop_time_update.stop_id
+                                    && stop_id == &stop.id
+                                {
+                                    return Some(stop_time_update.arrival?.time);
                                 }
                                 None
                             })
                             .collect::<Vec<_>>();
-                        if filtered_stoptime_update.len() == 0 {
-                            return None;
-                        }
-                        return Some(Trip {
+                        return Some(TripAtStop {
+                            trip_id: trip_id.clone(),
                             vehicle_id: trip_update.vehicle.clone()?.id,
-                            arrival_time: trip_update.stop_time_update[0].arrival?.time,
+                            arrival_times,
                         });
                     }
                     None
@@ -121,6 +139,29 @@ fn load_stops(
             code: record.get(1).unwrap_or_default().to_string(),
         };
         stops.insert(stop.code.clone(), stop);
+    }
+    Ok(())
+}
+
+fn load_stop_times(
+    stop_times: &mut HashMap<String, HashMap<String, StopTimeInfo>>,
+    csv_path: String,
+) -> Result<(), Box<dyn Error>> {
+    let mut rdr = csv::Reader::from_path(csv_path)?;
+    for result in rdr.records() {
+        // The iterator yields Result<StringRecord, Error>, so we check the
+        // error here.
+        let record = result?;
+        let stop_time = StopTimeInfo {
+            trip_id: record.get(0).unwrap_or_default().to_string(),
+            stop_id: record.get(3).unwrap_or_default().to_string(),
+            arrival_time: record.get(1).unwrap_or_default().to_string(),
+            departure_time: record.get(2).unwrap_or_default().to_string(),
+        };
+        stop_times
+            .entry(stop_time.trip_id.clone())
+            .or_insert_with(HashMap::new)
+            .insert(stop_time.stop_id.clone(), stop_time);
     }
     Ok(())
 }
