@@ -1995,6 +1995,7 @@ dependencies = [
  "prost",
  "prost-build",
  "reqwest",
+ "serde",
  "serde_json",
  "tokio",
  "zip",

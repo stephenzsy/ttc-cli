@@ -7,16 +7,16 @@ pub mod transit_realtime {
     include!("protos/transit_realtime.rs");
 }
 
-pub struct StopInfo {
-    pub id: String,
-    pub name: String,
-    pub code: String,
+#[derive(Debug, serde::Deserialize)]
+pub struct StopRecord {
+    pub stop_id: String,
+    pub stop_name: String,
+    pub stop_code: String,
 }
 
 pub struct Config {
     pub feed_url: String,
     pub stops_csv_path: String,
-    pub stop_times_csv_path: String,
 }
 
 #[derive(Debug)]
@@ -28,8 +28,7 @@ pub struct StopTimeInfo {
 }
 
 pub struct TTCRealTime {
-    stops: HashMap<String, StopInfo>,
-    stop_times: HashMap<String, HashMap<String, StopTimeInfo>>,
+    stops: HashMap<String, StopRecord>,
     feed_url: String,
     //    show_scheduled: bool,
 }
@@ -49,25 +48,18 @@ pub struct NextBusResult {
 
 const DEFAULT_FEED_URL: &str = "https://gtfsrt.ttc.ca/trips/update?format=binary";
 const DEFAULT_STOPS_CSV_PATH: &str = "./stops.txt";
-const DEFAULT_STOP_TIMES_CSV_PATH: &str = "./stop_times.txt";
 
 impl TTCRealTime {
-    pub fn new(config: Option<Config>, show_scheduled: bool) -> Result<Self, Box<dyn Error>> {
+    pub fn new(config: Option<Config>) -> Result<Self, Box<dyn Error>> {
         let config = config.unwrap_or_else(|| Config {
             feed_url: DEFAULT_FEED_URL.to_string(),
             stops_csv_path: DEFAULT_STOPS_CSV_PATH.to_string(),
-            stop_times_csv_path: DEFAULT_STOP_TIMES_CSV_PATH.to_string(),
         });
         let mut s = Self {
             stops: HashMap::new(),
-            stop_times: HashMap::new(),
             feed_url: config.feed_url,
-            // show_scheduled,
         };
         load_stops(&mut s.stops, config.stops_csv_path)?;
-        if show_scheduled {
-            load_stop_times(&mut s.stop_times, config.stop_times_csv_path)?;
-        }
         Ok(s)
     }
 
@@ -96,7 +88,7 @@ impl TTCRealTime {
                             .iter()
                             .filter_map(|stop_time_update| {
                                 if let Some(stop_id) = &stop_time_update.stop_id
-                                    && stop_id == &stop.id
+                                    && stop_id == &stop.stop_id
                                 {
                                     return Some(stop_time_update.arrival?.time);
                                 }
@@ -116,7 +108,7 @@ impl TTCRealTime {
             return Ok(NextBusResult {
                 timestamp: message.header.timestamp,
                 route_id: filter_route_id,
-                stop_name: stop.name.clone(),
+                stop_name: stop.stop_name.clone(),
                 trips,
             });
         }
@@ -125,24 +117,20 @@ impl TTCRealTime {
 }
 
 fn load_stops(
-    stops: &mut HashMap<String, StopInfo>,
+    stops: &mut HashMap<String, StopRecord>,
     csv_path: String,
 ) -> Result<(), Box<dyn Error>> {
     let mut rdr = csv::Reader::from_path(csv_path)?;
-    for result in rdr.records() {
+    for result in rdr.deserialize() {
         // The iterator yields Result<StringRecord, Error>, so we check the
         // error here.
-        let record = result?;
-        let stop = StopInfo {
-            id: record.get(0).unwrap_or_default().to_string(),
-            name: record.get(2).unwrap_or_default().to_string(),
-            code: record.get(1).unwrap_or_default().to_string(),
-        };
-        stops.insert(stop.code.clone(), stop);
+        let record: StopRecord = result?;
+        stops.insert(record.stop_code.clone(), record);
     }
     Ok(())
 }
 
+/*
 fn load_stop_times(
     stop_times: &mut HashMap<String, HashMap<String, StopTimeInfo>>,
     csv_path: String,
@@ -165,3 +153,4 @@ fn load_stop_times(
     }
     Ok(())
 }
+*/

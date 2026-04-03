@@ -84,7 +84,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .filter
         .ok_or("Filter is required when not updating stops")?;
 
-    let session = ttc_cli::TTCRealTime::new(None, filter.show_scheduled)?;
+    let session = ttc_cli::TTCRealTime::new(None)?;
     let next_bus = session.next_bus(filter.route, filter.stop).await?;
 
     if let Some(timestamp) = next_bus.timestamp
