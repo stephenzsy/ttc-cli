@@ -7,6 +7,9 @@ pub mod transit_realtime {
     include!("protos/transit_realtime.rs");
 }
 
+use crate::transit_realtime::FeedMessage;
+use crate::transit_realtime::trip_update::stop_time_update::ScheduleRelationship;
+
 #[derive(Debug, serde::Deserialize)]
 pub struct StopRecord {
     pub stop_id: String,
@@ -36,7 +39,7 @@ pub struct TTCRealTime {
 pub struct TripAtStop {
     pub trip_id: Option<String>,
     pub vehicle_id: Option<String>,
-    pub arrival_times: Vec<Option<i64>>,
+    pub arrival_times: Vec<i64>,
 }
 
 pub struct NextBusResult {
@@ -63,56 +66,67 @@ impl TTCRealTime {
         Ok(s)
     }
 
-    pub async fn next_bus(
+    pub async fn fetch_feed(&self) -> Result<transit_realtime::FeedMessage, Box<dyn Error>> {
+        let feed_raw = reqwest::get(&self.feed_url).await?.bytes().await?;
+        let message = transit_realtime::FeedMessage::decode(feed_raw)?;
+        Ok(message)
+    }
+
+    pub fn next_bus(
         &self,
-        filter_route_id: String,
-        stop_code: String,
+        feed: &FeedMessage,
+        route_id: &String,
+        stop_code: &String,
     ) -> Result<NextBusResult, Box<dyn Error>> {
-        if let Some(stop) = self.stops.get(&stop_code) {
-            // fetch feed
-            let feed_raw = reqwest::get(&self.feed_url).await?.bytes().await?;
-            let message = transit_realtime::FeedMessage::decode(feed_raw)?;
+        let stop = self
+            .stops
+            .get(stop_code)
+            .ok_or(format!("Stop code {} not found", stop_code))?;
 
-            let trips = message
-                .entity
-                .iter()
-                .filter_map(|entity| {
-                    if !entity.is_deleted()
-                        && let Some(trip_update) = &entity.trip_update
-                        && let Some(route_id) = &trip_update.trip.route_id
-                        && route_id == &filter_route_id
-                    {
-                        let trip_id = &trip_update.trip.trip_id;
-                        let arrival_times = trip_update
-                            .stop_time_update
-                            .iter()
-                            .filter_map(|stop_time_update| {
-                                if let Some(stop_id) = &stop_time_update.stop_id
-                                    && stop_id == &stop.stop_id
+        let trips = feed
+            .entity
+            .iter()
+            .filter_map(|entity| {
+                if !entity.is_deleted()
+                    && let Some(trip_update) = &entity.trip_update
+                    && let Some(trip_route_id) = &trip_update.trip.route_id
+                    && trip_route_id == route_id
+                {
+                    let trip_id = &trip_update.trip.trip_id;
+                    let arrival_times = trip_update
+                        .stop_time_update
+                        .iter()
+                        .filter_map(|stop_time_update| {
+                            if let Some(trip_stop_id) = &stop_time_update.stop_id
+                                && trip_stop_id == &stop.stop_id
+                            {
+                                if let Some(schedule_relationship) =
+                                    stop_time_update.schedule_relationship
+                                    && schedule_relationship == ScheduleRelationship::NoData as i32
                                 {
-                                    return Some(stop_time_update.arrival?.time);
+                                    return Some(-1 as i64);
                                 }
-                                None
-                            })
-                            .collect::<Vec<_>>();
-                        return Some(TripAtStop {
-                            trip_id: trip_id.clone(),
-                            vehicle_id: trip_update.vehicle.clone()?.id,
-                            arrival_times,
-                        });
-                    }
-                    None
-                })
-                .collect::<Vec<_>>();
+                                return stop_time_update.arrival?.time;
+                            }
+                            None
+                        })
+                        .collect::<Vec<_>>();
+                    return Some(TripAtStop {
+                        trip_id: trip_id.clone(),
+                        vehicle_id: trip_update.vehicle.clone()?.id,
+                        arrival_times,
+                    });
+                }
+                None
+            })
+            .collect::<Vec<_>>();
 
-            return Ok(NextBusResult {
-                timestamp: message.header.timestamp,
-                route_id: filter_route_id,
-                stop_name: stop.stop_name.clone(),
-                trips,
-            });
-        }
-        Err(format!("Stop code {} not found", stop_code).into())
+        Ok(NextBusResult {
+            timestamp: feed.header.timestamp,
+            route_id: route_id.clone(),
+            stop_name: stop.stop_name.clone(),
+            trips,
+        })
     }
 }
 

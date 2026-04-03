@@ -85,7 +85,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .ok_or("Filter is required when not updating stops")?;
 
     let session = ttc_cli::TTCRealTime::new(None)?;
-    let next_bus = session.next_bus(filter.route, filter.stop).await?;
+    let feed = session.fetch_feed().await?;
+    let next_bus = session.next_bus(&feed, &filter.route, &filter.stop)?;
 
     if let Some(timestamp) = next_bus.timestamp
         && let Some(local_ts) = timestamp_to_local(timestamp as i64)
@@ -114,12 +115,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 println!("  Vehicle ID: N/A");
             }
             for arrival_time in trip.arrival_times {
-                if let Some(arrival_time) = arrival_time
-                    && let Some(local_arrival) = timestamp_to_local(arrival_time)
-                {
+                if arrival_time == -1 {
+                    println!("  Arrival Time: N/A (No Data)");
+                } else if let Some(local_arrival) = timestamp_to_local(arrival_time) {
                     println!("  Arrival Time: {}", local_arrival);
-                } else {
-                    println!("  Arrival Time: N/A");
                 }
             }
         }
