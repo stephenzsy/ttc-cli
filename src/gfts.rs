@@ -1,8 +1,7 @@
 use clap::Parser;
 use reqwest::Url;
 use std::{error::Error, fs, io::Cursor};
-
-pub mod db;
+use ttc_cli::db;
 
 #[derive(clap::Parser, Debug)]
 #[command(version)]
