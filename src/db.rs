@@ -27,6 +27,14 @@ pub struct Stop {
     pub stop_code: String,
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct StopTime {
+    pub trip_id: String,
+    pub stop_sequence: String,
+    pub stop_id: String,
+    pub arrival_time: Option<String>,
+}
+
 impl GtfsDb {
     pub fn new(data_dir: &Path, writable: bool) -> Result<Self, Box<dyn std::error::Error>> {
         let db_path = data_dir.join("gfts.db");
@@ -38,11 +46,12 @@ impl GtfsDb {
         Ok(GtfsDb { conn })
     }
 
-    pub fn initialize(&self) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn clean(&self) -> Result<(), Box<dyn std::error::Error>> {
         self.conn.execute("DROP TABLE IF EXISTS stops", ())?;
+        self.conn.execute("DROP TABLE IF EXISTS stop_times", ())?;
         self.conn.execute(
             "CREATE TABLE stops (
-            stop_id   TEXT PRIMARY KEY,
+            stop_id   TEXT NOT NULL PRIMARY KEY,
             stop_code TEXT NOT NULL,
             stop_name TEXT
         )",
@@ -52,6 +61,20 @@ impl GtfsDb {
             "CREATE UNIQUE INDEX index_stop_code ON stops (stop_code)",
             (), // empty list of parameters.
         )?;
+        self.conn.execute(
+            "CREATE TABLE stop_times (
+            trip_id   TEXT    NOT NULL,
+            stop_seq  INTEGER NOT NULL,
+            stop_id   TEXT    NOT NULL,
+            arrival   TEXT,
+            PRIMARY KEY (trip_id, stop_seq)
+        )",
+            (), // empty list of parameters.
+        )?;
+        self.conn.execute(
+            "CREATE INDEX index_stop_id ON stop_times (stop_id)",
+            (), // empty list of parameters.
+        )?;
         Ok(())
     }
 
@@ -59,6 +82,25 @@ impl GtfsDb {
         self.conn.execute(
             "INSERT INTO stops (stop_id, stop_code, stop_name) VALUES (?1, ?2, ?3)",
             (&stop.stop_id, &stop.stop_code, &stop.stop_name),
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_stop_times(&self, stop_id: &String) -> Result<(), Box<dyn std::error::Error>> {
+        self.conn
+            .execute("DELETE FROM stop_times WHERE stop_id = ?", (stop_id,))?;
+        Ok(())
+    }
+
+    pub fn insert_stop_time(&self, stop_time: &StopTime) -> Result<(), Box<dyn std::error::Error>> {
+        self.conn.execute(
+            "INSERT INTO stop_times (trip_id, stop_seq, stop_id, arrival) VALUES (?1, ?2, ?3, ?4)",
+            (
+                &stop_time.trip_id,
+                &stop_time.stop_sequence,
+                &stop_time.stop_id,
+                &stop_time.arrival_time,
+            ),
         )?;
         Ok(())
     }
