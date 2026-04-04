@@ -40,7 +40,6 @@ impl GtfsDb {
 
     pub fn initialize(&self) -> Result<(), Box<dyn std::error::Error>> {
         self.conn.execute("DROP TABLE IF EXISTS stops", ())?;
-        self.conn.execute("DROP TABLE IF EXISTS stop_times", ())?;
         self.conn.execute(
             "CREATE TABLE stops (
             stop_id   TEXT PRIMARY KEY,
@@ -56,7 +55,7 @@ impl GtfsDb {
         Ok(())
     }
 
-    pub fn insert_stop(&self, stop: Stop) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn insert_stop(&self, stop: &Stop) -> Result<(), Box<dyn std::error::Error>> {
         self.conn.execute(
             "INSERT INTO stops (stop_id, stop_code, stop_name) VALUES (?1, ?2, ?3)",
             (&stop.stop_id, &stop.stop_code, &stop.stop_name),

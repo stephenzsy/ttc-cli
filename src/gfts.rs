@@ -73,7 +73,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         // The iterator yields Result<StringRecord, Error>, so we check the
         // error here.
         let record: db::Stop = result?;
-        gtfs_db.insert_stop(record)?;
+        gtfs_db.insert_stop(&record)?;
     }
 
     Ok(())
