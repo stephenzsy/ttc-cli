@@ -1,70 +1,22 @@
 use chrono::{DateTime, Local};
 use clap::Parser;
-use reqwest::{self, Url};
-use std::{error::Error, io::Read};
+use std::error::Error;
 
 pub mod transit_realtime {
     include!("protos/transit_realtime.rs");
 }
 
-const GTFS_DATA_BASE_URL: &str = "https://ckan0.cf.opendata.inter.prod-toronto.ca";
-
-#[derive(Parser, Debug)]
-struct Filter {
+#[derive(clap::Parser, Debug)]
+#[command(version)]
+struct Args {
     #[arg(short, long)]
     route: String,
 
     #[arg(short, long)]
     stop: String,
 
-    #[arg(long, default_value_t = false)]
-    show_scheduled: bool,
-}
-
-#[derive(clap::Parser, Debug)]
-#[command(version)]
-struct Args {
-    #[command(flatten)]
-    filter: Option<Filter>,
-
-    #[arg(
-        long,
-        default_value_t = false,
-        conflicts_with = "route",
-        conflicts_with = "stop"
-    )]
-    update_stops: bool,
-
-    #[arg(long, default_value_t = false)]
-    debug: bool,
-}
-
-async fn update_stops() -> Result<(), Box<dyn Error>> {
-    let mut metadata_url =
-        Url::parse(&format!("{}/api/3/action/package_show", GTFS_DATA_BASE_URL))?;
-    metadata_url
-        .query_pairs_mut()
-        .append_pair("id", "merged-gtfs-ttc-routes-and-schedules");
-    let metadata = reqwest::get(metadata_url)
-        .await?
-        .json::<serde_json::Value>()
-        .await?;
-    println!("Downloading GFTS archive");
-    let archive_bytes = reqwest::get(metadata["result"]["resources"][0]["url"].as_str().unwrap())
-        .await?
-        .bytes()
-        .await?;
-    let mut buf: Vec<u8> = Vec::new();
-    zip::ZipArchive::new(std::io::Cursor::new(&archive_bytes.clone()))?
-        .by_name("stops.txt")?
-        .read_to_end(&mut buf)?;
-    std::fs::write("./stops.txt", buf)?;
-    let mut buf: Vec<u8> = Vec::new();
-    zip::ZipArchive::new(std::io::Cursor::new(&archive_bytes.clone()))?
-        .by_name("stop_times.txt")?
-        .read_to_end(&mut buf)?;
-    std::fs::write("./stop_times.txt", buf)?;
-    Ok(())
+    #[arg(long)]
+    data_dir: Option<String>,
 }
 
 fn timestamp_to_local(timestamp: i64) -> Option<DateTime<Local>> {
@@ -75,18 +27,9 @@ fn timestamp_to_local(timestamp: i64) -> Option<DateTime<Local>> {
 async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
-    if args.update_stops {
-        update_stops().await?;
-        return Ok(());
-    }
-
-    let filter = args
-        .filter
-        .ok_or("Filter is required when not updating stops")?;
-
-    let session = ttc_cli::TTCRealTime::new(None)?;
+    let session = ttc_cli::TTCRealTime::new(&args.data_dir)?;
     let feed = session.fetch_feed().await?;
-    let next_bus = session.next_bus(&feed, &filter.route, &filter.stop)?;
+    let next_bus = session.next_bus(&feed, &args.route, &args.stop)?;
 
     if let Some(timestamp) = next_bus.timestamp
         && let Some(local_ts) = timestamp_to_local(timestamp as i64)

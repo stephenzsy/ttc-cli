@@ -1,21 +1,13 @@
 use prost::Message;
 use reqwest::{self};
-use std::collections::hash_map::HashMap;
 use std::error::Error;
 
 pub mod transit_realtime {
     include!("protos/transit_realtime.rs");
 }
-
+pub mod db;
 use crate::transit_realtime::FeedMessage;
 use crate::transit_realtime::trip_update::stop_time_update::ScheduleRelationship;
-
-#[derive(Debug, serde::Deserialize)]
-pub struct StopRecord {
-    pub stop_id: String,
-    pub stop_name: String,
-    pub stop_code: String,
-}
 
 pub struct Config {
     pub feed_url: String,
@@ -31,7 +23,7 @@ pub struct StopTimeInfo {
 }
 
 pub struct TTCRealTime {
-    stops: HashMap<String, StopRecord>,
+    db: db::GtfsDb,
     feed_url: String,
     //    show_scheduled: bool,
 }
@@ -50,20 +42,16 @@ pub struct NextBusResult {
 }
 
 const DEFAULT_FEED_URL: &str = "https://gtfsrt.ttc.ca/trips/update?format=binary";
-const DEFAULT_STOPS_CSV_PATH: &str = "./stops.txt";
 
 impl TTCRealTime {
-    pub fn new(config: Option<Config>) -> Result<Self, Box<dyn Error>> {
-        let config = config.unwrap_or_else(|| Config {
-            feed_url: DEFAULT_FEED_URL.to_string(),
-            stops_csv_path: DEFAULT_STOPS_CSV_PATH.to_string(),
-        });
-        let mut s = Self {
-            stops: HashMap::new(),
-            feed_url: config.feed_url,
-        };
-        load_stops(&mut s.stops, config.stops_csv_path)?;
-        Ok(s)
+    pub fn new(data_dir: &Option<String>) -> Result<Self, Box<dyn Error>> {
+        let data_dir_path = db::resolve_data_dir(data_dir);
+        let gtfs_db = db::GtfsDb::new(&data_dir_path.as_path(), false)?;
+
+        Ok(Self {
+            db: gtfs_db,
+            feed_url: String::from(DEFAULT_FEED_URL),
+        })
     }
 
     pub async fn fetch_feed(&self) -> Result<transit_realtime::FeedMessage, Box<dyn Error>> {
@@ -79,9 +67,9 @@ impl TTCRealTime {
         stop_code: &String,
     ) -> Result<NextBusResult, Box<dyn Error>> {
         let stop = self
-            .stops
-            .get(stop_code)
-            .ok_or(format!("Stop code {} not found", stop_code))?;
+            .db
+            .get_stop_by_code(stop_code)
+            .map_err(|_| format!("Stop code {} not found", stop_code))?;
 
         let trips = feed
             .entity
@@ -129,42 +117,3 @@ impl TTCRealTime {
         })
     }
 }
-
-fn load_stops(
-    stops: &mut HashMap<String, StopRecord>,
-    csv_path: String,
-) -> Result<(), Box<dyn Error>> {
-    let mut rdr = csv::Reader::from_path(csv_path)?;
-    for result in rdr.deserialize() {
-        // The iterator yields Result<StringRecord, Error>, so we check the
-        // error here.
-        let record: StopRecord = result?;
-        stops.insert(record.stop_code.clone(), record);
-    }
-    Ok(())
-}
-
-/*
-fn load_stop_times(
-    stop_times: &mut HashMap<String, HashMap<String, StopTimeInfo>>,
-    csv_path: String,
-) -> Result<(), Box<dyn Error>> {
-    let mut rdr = csv::Reader::from_path(csv_path)?;
-    for result in rdr.records() {
-        // The iterator yields Result<StringRecord, Error>, so we check the
-        // error here.
-        let record = result?;
-        let stop_time = StopTimeInfo {
-            trip_id: record.get(0).unwrap_or_default().to_string(),
-            stop_id: record.get(3).unwrap_or_default().to_string(),
-            arrival_time: record.get(1).unwrap_or_default().to_string(),
-            departure_time: record.get(2).unwrap_or_default().to_string(),
-        };
-        stop_times
-            .entry(stop_time.trip_id.clone())
-            .or_insert_with(HashMap::new)
-            .insert(stop_time.stop_id.clone(), stop_time);
-    }
-    Ok(())
-}
-*/
