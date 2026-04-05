@@ -7,7 +7,6 @@ pub mod transit_realtime {
 }
 pub mod db;
 use crate::transit_realtime::FeedMessage;
-use crate::transit_realtime::trip_update::stop_time_update::ScheduleRelationship;
 
 pub struct Config {
     pub feed_url: String,
@@ -25,13 +24,17 @@ pub struct StopTimeInfo {
 pub struct TTCRealTime {
     db: db::GtfsDb,
     feed_url: String,
-    //    show_scheduled: bool,
+}
+
+pub struct ArrivalTime {
+    pub rt_value: Option<i64>,
+    pub scheduled: Option<String>,
 }
 
 pub struct TripAtStop {
     pub trip_id: Option<String>,
     pub vehicle_id: Option<String>,
-    pub arrival_times: Vec<i64>,
+    pub arrival_times: Vec<ArrivalTime>,
 }
 
 pub struct NextBusResult {
@@ -88,15 +91,25 @@ impl TTCRealTime {
                             if let Some(trip_stop_id) = &stop_time_update.stop_id
                                 && trip_stop_id == &stop.stop_id
                             {
-                                if let Some(schedule_relationship) =
-                                    stop_time_update.schedule_relationship
-                                    && schedule_relationship == ScheduleRelationship::NoData as i32
-                                {
-                                    return Some(-1 as i64);
+                                let mut scheduled: Option<String> = None;
+                                if let Some(trip_id) = trip_id {
+                                    println!("{}", trip_id);
+                                    let stop_time = self
+                                        .db
+                                        .get_scheduled_arrival(
+                                            &trip_id,
+                                            &stop_time_update.stop_sequence(),
+                                        )
+                                        .ok()?;
+                                    scheduled = stop_time?.arrival_time;
                                 }
-                                return stop_time_update.arrival?.time;
+                                Some(ArrivalTime {
+                                    rt_value: stop_time_update.arrival?.time,
+                                    scheduled: scheduled,
+                                })
+                            } else {
+                                None
                             }
-                            None
                         })
                         .collect::<Vec<_>>();
                     return Some(TripAtStop {

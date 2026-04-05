@@ -30,7 +30,7 @@ pub struct Stop {
 #[derive(Debug, serde::Deserialize)]
 pub struct StopTime {
     pub trip_id: String,
-    pub stop_sequence: String,
+    pub stop_sequence: u32,
     pub stop_id: String,
     pub arrival_time: Option<String>,
 }
@@ -109,7 +109,7 @@ impl GtfsDb {
         let mut stmt = self
             .conn
             .prepare("SELECT stop_id, stop_code, stop_name FROM stops WHERE stop_code = ?")?;
-        let stop = stmt.query_one([stop_code], |row| {
+        let stop = stmt.query_one((stop_code,), |row| {
             Ok(Stop {
                 stop_id: row.get(0)?,
                 stop_code: row.get(1)?,
@@ -117,5 +117,27 @@ impl GtfsDb {
             })
         })?;
         Ok(stop)
+    }
+
+    pub fn get_scheduled_arrival(
+        &self,
+        trip_id: &String,
+        stop_seq: &u32,
+    ) -> Result<Option<StopTime>, Box<dyn std::error::Error>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT trip_id, stop_seq, stop_id, arrival FROM stop_times WHERE trip_id = ?1 AND stop_seq = ?2",
+        )?;
+        let stop_times = stmt.query_map((trip_id, stop_seq), |row| {
+            Ok(StopTime {
+                trip_id: row.get(0)?,
+                stop_sequence: row.get(1)?,
+                stop_id: row.get(2)?,
+                arrival_time: row.get(3)?,
+            })
+        })?;
+        for stop_time in stop_times {
+            return Ok(Some(stop_time?));
+        }
+        Ok(None)
     }
 }

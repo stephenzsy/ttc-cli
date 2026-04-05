@@ -58,10 +58,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 println!("  Vehicle ID: N/A");
             }
             for arrival_time in trip.arrival_times {
-                if arrival_time == -1 {
+                if let Some(ts) = arrival_time.rt_value {
+                    if let Some(local_arrival) = timestamp_to_local(ts) {
+                        println!("  Arrival Time: {}", local_arrival);
+                    }
+                } else {
                     println!("  Arrival Time: N/A (No Data)");
-                } else if let Some(local_arrival) = timestamp_to_local(arrival_time) {
-                    println!("  Arrival Time: {}", local_arrival);
+                }
+                if let Some(scheduled) = arrival_time.scheduled {
+                    println!("  Scheduled Arrival Time: {}", scheduled);
                 }
             }
         }
