@@ -33,14 +33,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
     let data_dir_path = db::resolve_data_dir(&args.data_dir);
-    // prepare sqlite connection
-    let gtfs_db = db::GtfsDb::new(&data_dir_path.as_path(), true)?;
 
     // setup data directory
     if !&data_dir_path.exists() {
         fs::create_dir_all(&data_dir_path)?;
         println!("Created data directory: {:?}", &data_dir_path)
     }
+
+    // prepare sqlite connection
+    let gtfs_db = db::GtfsDb::new(&data_dir_path.as_path(), true)?;
 
     let archive_file_name = data_dir_path.join("gfts.zip");
     if args.download {
