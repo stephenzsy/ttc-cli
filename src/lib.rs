@@ -93,7 +93,6 @@ impl TTCRealTime {
                             {
                                 let mut scheduled: Option<String> = None;
                                 if let Some(trip_id) = trip_id {
-                                    println!("{}", trip_id);
                                     let stop_time = self
                                         .db
                                         .get_scheduled_arrival(
