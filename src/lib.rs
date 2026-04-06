@@ -100,7 +100,9 @@ impl TTCRealTime {
                                             &stop_time_update.stop_sequence(),
                                         )
                                         .ok()?;
-                                    scheduled = stop_time?.arrival_time;
+                                    if let Some(stop_time) = stop_time {
+                                        scheduled = stop_time.arrival_time;
+                                    }
                                 }
                                 Some(ArrivalTime {
                                     rt_value: stop_time_update.arrival?.time,
