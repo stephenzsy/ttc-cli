@@ -105,7 +105,9 @@ impl TTCRealTime {
                                     }
                                 }
                                 Some(ArrivalTime {
-                                    rt_value: stop_time_update.arrival?.time,
+                                    rt_value: stop_time_update
+                                        .arrival
+                                        .and_then(|arrival| arrival.time),
                                     scheduled: scheduled,
                                 })
                             } else {
@@ -115,7 +117,7 @@ impl TTCRealTime {
                         .collect::<Vec<_>>();
                     return Some(TripAtStop {
                         trip_id: trip_id.clone(),
-                        vehicle_id: trip_update.vehicle.clone()?.id,
+                        vehicle_id: trip_update.vehicle.clone().and_then(|vehicle| vehicle.id),
                         arrival_times,
                     });
                 }
